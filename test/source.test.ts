@@ -3,7 +3,7 @@
 // and the original only when Safelight reads the file.
 
 import { describe, expect, it, vi } from "vitest";
-import { CONNECTION_KEY, SOURCE_ID } from "../src/connection";
+import { API_KEY_SECRET, CONNECTION_KEY, SOURCE_ID } from "../src/connection";
 import { GB, ORIGINALS_LIMIT_KEY } from "../src/originals";
 import { immichSource, syncSource } from "../src/source";
 import { fakeApi } from "./support/fake-api";
@@ -77,26 +77,28 @@ describe("the Immich library source", () => {
 });
 
 describe("the kept originals' limit", () => {
-  const CONNECTED = { [CONNECTION_KEY]: CONN };
+  const { apiKey, ...stored } = CONN;
+  const CONNECTED = { [CONNECTION_KEY]: stored };
+  const kept = { [API_KEY_SECRET]: apiKey };
 
-  it("is 10 GB unless the person chose another", () => {
-    const rig = fakeApi(vi.fn(), CONNECTED);
-    syncSource(rig.api);
+  it("is 10 GB unless the person chose another", async () => {
+    const rig = fakeApi(vi.fn(), CONNECTED, kept);
+    await syncSource(rig.api);
     expect(rig.source()?.keptOriginalsLimit).toBe(10 * GB);
   });
 
-  it("is the one chosen, or none", () => {
-    const rig = fakeApi(vi.fn(), { ...CONNECTED, [ORIGINALS_LIMIT_KEY]: 50 });
-    syncSource(rig.api);
+  it("is the one chosen, or none", async () => {
+    const rig = fakeApi(vi.fn(), { ...CONNECTED, [ORIGINALS_LIMIT_KEY]: 50 }, kept);
+    await syncSource(rig.api);
     expect(rig.source()?.keptOriginalsLimit).toBe(50 * GB);
     rig.api.settings.set(ORIGINALS_LIMIT_KEY, null);
-    syncSource(rig.api);
+    await syncSource(rig.api);
     expect(rig.source()?.keptOriginalsLimit).toBeNull();
   });
 
-  it("is 10 GB when the stored choice isn't one", () => {
-    const rig = fakeApi(vi.fn(), { ...CONNECTED, [ORIGINALS_LIMIT_KEY]: "lots" });
-    syncSource(rig.api);
+  it("is 10 GB when the stored choice isn't one", async () => {
+    const rig = fakeApi(vi.fn(), { ...CONNECTED, [ORIGINALS_LIMIT_KEY]: "lots" }, kept);
+    await syncSource(rig.api);
     expect(rig.source()?.keptOriginalsLimit).toBe(10 * GB);
   });
 });

@@ -4,7 +4,7 @@
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CONNECTION_KEY, SOURCE_ID } from "../src/connection";
+import { API_KEY_SECRET, CONNECTION_KEY, SOURCE_ID } from "../src/connection";
 import { activate } from "../src/index";
 import { NOTICES_SEEN_KEY, RenditionNotice } from "../src/RenditionNotice";
 import { React } from "../src/rt";
@@ -14,14 +14,14 @@ import { SERVER } from "./support/mock-immich";
 
 afterEach(cleanup);
 
-const CONN = { server: SERVER, apiKey: "good-key", userId: "user-1", userName: "Anna" };
+const CONN = { server: SERVER, userId: "user-1", userName: "Anna" };
 
 const photo = (filename: string, sourceKey?: string) =>
   ({ id: `p-${filename}`, filename, sourceKey }) as CatalogPhoto;
 
 function mount(active: CatalogPhoto | undefined, open: string | null = SOURCE_ID, initial: Record<string, unknown> = {}) {
   const fetch = vi.fn();
-  const rig = fakeApi(fetch, { [CONNECTION_KEY]: CONN, ...initial });
+  const rig = fakeApi(fetch, { [CONNECTION_KEY]: CONN, ...initial }, { [API_KEY_SECRET]: "good-key" });
   activate(rig.api);
   rig.openSource = open;
   rig.activePhoto = active;

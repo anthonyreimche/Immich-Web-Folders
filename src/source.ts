@@ -62,8 +62,8 @@ export function immichSource(
 /** Register the source of the saved connection, with the kept originals' limit,
  *  or none without one. A new account or server is another library, which
  *  Safelight opens as another catalogue. */
-export function syncSource(api: SafelightAPI): void {
-  const conn = savedConnection(api.settings);
+export async function syncSource(api: SafelightAPI): Promise<void> {
+  const conn = await savedConnection(api);
   if (conn)
     api.library.registerSource(
       immichSource((url, init) => api.network.fetch(url, init), conn, originalsLimit(api.settings)),

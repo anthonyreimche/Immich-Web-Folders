@@ -6,7 +6,7 @@
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CONNECTION_KEY, SERVER_KEY, SOURCE_ID } from "../src/connection";
+import { API_KEY_SECRET, CONNECTION_KEY, SERVER_KEY, SOURCE_ID } from "../src/connection";
 import { GB, ORIGINALS_LIMIT_KEY } from "../src/originals";
 import { activate } from "../src/index";
 import { React } from "../src/rt";
@@ -16,13 +16,16 @@ import { SERVER, mockImmich, type MockOptions } from "./support/mock-immich";
 
 afterEach(cleanup);
 
-const CONN = { server: SERVER, apiKey: "good-key", userId: "user-1", userName: "Anna" };
+const CONN = { server: SERVER, userId: "user-1", userName: "Anna" };
+const KEY = { [API_KEY_SECRET]: "good-key" };
 
-function mount(opts: MockOptions = {}, initial: Record<string, unknown> = {}) {
+async function mount(opts: MockOptions = {}, initial: Record<string, unknown> = {}, kept: Record<string, string> = {}) {
   const server = mockImmich({ albums: [{ id: "a", albumName: "Trip", assets: [] }], ...opts });
-  const rig = fakeApi(server.fetch, initial);
+  const rig = fakeApi(server.fetch, initial, kept);
   activate(rig.api);
-  render(<ImmichSettings />);
+  await act(async () => {
+    render(<ImmichSettings />);
+  });
   return { rig, server };
 }
 
@@ -37,11 +40,12 @@ async function test(rig: Rig, address: string, key: string) {
 
 describe("Test connection", () => {
   it("asks to reach the server, checks it, then connects and says so", async () => {
-    const { rig } = mount();
+    const { rig } = await mount();
     await test(rig, "nas.local:2283/", "good-key");
     expect(rig.asked).toEqual([SERVER]);
     expect(screen.getByRole("status").textContent).toMatch(/Connected as Anna to Immich 2\.3\.1: 1 album\. Open “Immich” in the Folders panel/);
     expect(rig.settings.get(CONNECTION_KEY)).toEqual(CONN);
+    expect(rig.secrets.get(API_KEY_SECRET)).toBe("good-key");
     expect(rig.settings.get(SERVER_KEY)).toBe(SERVER);
     expect(rig.source()?.id).toBe(SOURCE_ID);
     expect(input("API key").value).toBe("");
@@ -49,15 +53,16 @@ describe("Test connection", () => {
   });
 
   it("says why when the key is refused, and connects nothing", async () => {
-    const { rig } = mount();
+    const { rig } = await mount();
     await test(rig, SERVER, "wrong");
     expect(screen.getByRole("alert").textContent).toMatch(/refused the API key/);
     expect(rig.settings.get(CONNECTION_KEY)).toBeUndefined();
+    expect(rig.secrets.size).toBe(0);
     expect(rig.source()).toBeNull();
   });
 
   it("stops when the person doesn't allow the address", async () => {
-    const { rig, server } = mount();
+    const { rig, server } = await mount();
     rig.allow = false;
     await test(rig, SERVER, "good-key");
     expect(screen.getByRole("alert").textContent).toMatch(/wasn't allowed to connect to http:\/\/nas\.local:2283/);
@@ -65,26 +70,35 @@ describe("Test connection", () => {
   });
 
   it("checks the address before asking anything", async () => {
-    const { rig } = mount();
+    const { rig } = await mount();
     await test(rig, "ftp://nas", "good-key");
     expect(screen.getByRole("alert").textContent).toMatch(/Enter the server's address/);
     expect(rig.asked).toEqual([]);
   });
 
   it("needs a key", async () => {
-    const { rig } = mount();
+    const { rig } = await mount();
     await test(rig, SERVER, "  ");
     expect(screen.getByRole("alert").textContent).toMatch(/Enter an API key/);
   });
 
+  it("says so, and connects nothing, when this computer has no keychain to keep the key in", async () => {
+    const { rig } = await mount();
+    rig.keychain = false;
+    await test(rig, SERVER, "good-key");
+    expect(screen.getByRole("alert").textContent).toMatch(/no keychain/);
+    expect(rig.settings.get(CONNECTION_KEY)).toBeUndefined();
+    expect(rig.source()).toBeNull();
+  });
+
   it("says when the server can't be reached", async () => {
-    const { rig } = mount({ down: true });
+    const { rig } = await mount({ down: true });
     await test(rig, SERVER, "good-key");
     expect(screen.getByRole("alert").textContent).toMatch(/Couldn't reach the server/);
   });
 
   it("tests a saved connection again with its kept key", async () => {
-    const { rig, server } = mount({}, { [CONNECTION_KEY]: CONN, [SERVER_KEY]: SERVER });
+    const { rig, server } = await mount({}, { [CONNECTION_KEY]: CONN, [SERVER_KEY]: SERVER }, KEY);
     rig.allowed.add(SERVER);
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Test connection" })));
     expect(screen.getByRole("status").textContent).toMatch(/Connected as Anna/);
@@ -93,8 +107,8 @@ describe("Test connection", () => {
 });
 
 describe("a saved connection", () => {
-  it("shows who it is connected as, without contacting the server", () => {
-    const { server } = mount({}, { [CONNECTION_KEY]: CONN, [SERVER_KEY]: SERVER });
+  it("shows who it is connected as, without contacting the server", async () => {
+    const { server } = await mount({}, { [CONNECTION_KEY]: CONN, [SERVER_KEY]: SERVER }, KEY);
     expect(input("Server address").value).toBe(SERVER);
     expect(input("API key").placeholder).toBe("Saved");
     expect(screen.getByRole("status").textContent).toMatch(/Connected as Anna/);
@@ -103,14 +117,17 @@ describe("a saved connection", () => {
 
   it("disconnects: the key and the access are forgotten and an open Immich project closes", async () => {
     const server = mockImmich();
-    const rig = fakeApi(server.fetch, { [CONNECTION_KEY]: CONN, [SERVER_KEY]: SERVER });
+    const rig = fakeApi(server.fetch, { [CONNECTION_KEY]: CONN, [SERVER_KEY]: SERVER }, KEY);
     rig.allowed.add(SERVER);
     rig.openSource = SOURCE_ID;
     activate(rig.api);
-    render(<ImmichSettings />);
+    await act(async () => {
+      render(<ImmichSettings />);
+    });
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Disconnect" })));
     expect(rig.settings.get(CONNECTION_KEY)).toBeNull();
     expect(rig.settings.get(SERVER_KEY)).toBe(SERVER);
+    expect(rig.secrets.size).toBe(0);
     expect(rig.source()).toBeNull();
     expect(rig.allowed.has(SERVER)).toBe(false);
     expect(rig.closedProjects).toBe(1);
@@ -124,7 +141,7 @@ describe("downloaded originals", () => {
 
   async function mountConnected(initial: Record<string, unknown> = {}, kept = { count: 0, bytes: 0 }) {
     const server = mockImmich();
-    const rig = fakeApi(server.fetch, { ...SAVED, ...initial });
+    const rig = fakeApi(server.fetch, { ...SAVED, ...initial }, KEY);
     rig.kept = kept;
     activate(rig.api);
     await act(async () => {
@@ -135,8 +152,8 @@ describe("downloaded originals", () => {
 
   const limit = () => screen.getByLabelText("Downloaded originals") as HTMLSelectElement;
 
-  it("aren't offered before a connection is made", () => {
-    mount();
+  it("aren't offered before a connection is made", async () => {
+    await mount();
     expect(screen.queryByLabelText("Downloaded originals")).toBeNull();
     expect(screen.queryByRole("button", { name: "Clear downloaded originals" })).toBeNull();
   });

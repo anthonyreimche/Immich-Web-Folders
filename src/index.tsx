@@ -8,7 +8,7 @@
 // source the Folders panel opens. Nothing reaches the server until Safelight
 // opens the source or the person tests the connection.
 
-import { CONNECTION_KEY, EXTENSION_ID } from "./connection";
+import { CONNECTION_KEY, EXTENSION_ID, migrateApiKey } from "./connection";
 import { ORIGINALS_LIMIT_KEY } from "./originals";
 import { RenditionNotice } from "./RenditionNotice";
 import { initRuntime } from "./rt";
@@ -24,8 +24,8 @@ export function activate(host: SafelightAPI): void {
     keywords: ["Immich", "API key", "server", "web folders", "albums"],
   });
   host.registerSlot({ id: `${EXTENSION_ID}.rendition-notice`, slot: "develop-canvas-overlay", component: RenditionNotice });
-  syncSource(host);
+  void migrateApiKey(host).then(() => syncSource(host));
   host.settings.onChange((key) => {
-    if (key === CONNECTION_KEY || key === ORIGINALS_LIMIT_KEY) syncSource(host);
+    if (key === CONNECTION_KEY || key === ORIGINALS_LIMIT_KEY) void syncSource(host);
   });
 }

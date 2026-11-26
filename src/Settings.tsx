@@ -64,8 +64,7 @@ function DownloadedOriginals() {
     api.settings.set(ORIGINALS_LIMIT_KEY, gb);
     // Registered with the new limit before the space is read again, which then
     // tells the space left once a lower limit has removed what it had to.
-    syncSource(api);
-    void refresh();
+    void syncSource(api).then(refresh);
   };
 
   const clear = async () => {
@@ -134,11 +133,20 @@ export function ImmichSettings() {
   const openSource = api.library.useOpenSource();
   const [server, setServer] = React.useState(() => savedServer(api.settings));
   const [key, setKey] = React.useState("");
-  const [conn, setConn] = React.useState(() => savedConnection(api.settings));
-  const [status, setStatus] = React.useState<Status>(() => {
-    const saved = savedConnection(api.settings);
-    return saved ? { kind: "ok", text: connectedText(saved) } : { kind: "idle" };
-  });
+  const [conn, setConn] = React.useState<SavedConnection | null>(null);
+  const [status, setStatus] = React.useState<Status>({ kind: "idle" });
+
+  React.useEffect(() => {
+    let current = true;
+    void savedConnection(api).then((saved) => {
+      if (!current || !saved) return;
+      setConn(saved);
+      setStatus({ kind: "ok", text: connectedText(saved) });
+    });
+    return () => {
+      current = false;
+    };
+  }, []);
 
   const testConnection = async () => {
     const address = normalizeServer(server);
@@ -159,8 +167,13 @@ export function ImmichSettings() {
     try {
       const account = await immichClient((url, init) => api.network.fetch(url, init), { server: address, apiKey }).checkConnection();
       const next: SavedConnection = { server: address, apiKey, userId: account.userId, userName: account.userName };
-      saveConnection(api.settings, next);
-      syncSource(api);
+      try {
+        await saveConnection(api, next);
+      } catch {
+        setStatus({ kind: "error", text: "This computer has no keychain to keep the API key in, so Safelight can't connect." });
+        return;
+      }
+      await syncSource(api);
       setConn(next);
       setServer(address);
       setKey("");
@@ -173,8 +186,8 @@ export function ImmichSettings() {
 
   const disconnect = async () => {
     const left = conn;
-    forgetConnection(api.settings);
-    syncSource(api);
+    await forgetConnection(api);
+    await syncSource(api);
     setConn(null);
     if (openSource?.id === SOURCE_ID) api.stores.useProjectStore.getState().closeProject();
     if (left) await api.network.revokeAccess(left.server);

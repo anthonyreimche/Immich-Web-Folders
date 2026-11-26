@@ -32,9 +32,9 @@ type Fields = SafelightAPI["preferences"]["fields"];
 /** The members of SafelightAPI this fake implements, typed against the real thing. */
 type FakeMembers = Pick<
   SafelightAPI,
-  "version" | "extensionId" | "react" | "registerSettings" | "registerSlot" | "settings"
+  "version" | "extensionId" | "react" | "registerSettings" | "registerSlot" | "settings" | "secrets"
 > & {
-  network: SafelightAPI["network"];
+  network: Pick<SafelightAPI["network"], "requestAccess" | "hasAccess" | "revokeAccess" | "fetch">;
   library: Pick<
     SafelightAPI["library"],
     "registerSource" | "unregisterSource" | "useOpenSource" | "keptOriginals" | "clearKeptOriginals"
@@ -50,6 +50,10 @@ export interface Rig {
   settingsContributions: SettingsContribution[];
   slots: SlotContribution[];
   settings: Map<string, unknown>;
+  /** What the keychain keeps. */
+  secrets: Map<string, string>;
+  /** Whether this computer has a keychain; without one nothing is kept. */
+  keychain: boolean;
   /** The source registered now, or null. */
   source(): LibrarySourceContribution | null;
   /** Every access dialogue shown, by address asked for. */
@@ -79,8 +83,10 @@ const TOKENS = new Proxy({} as UITokens, { get: (_t, key) => `var(--${String(key
 export function fakeApi(
   fetch: (url: string, init?: NetworkRequestInit) => Promise<Response>,
   initial: Record<string, unknown> = {},
+  kept: Record<string, string> = {},
 ): Rig {
   const settings = new Map(Object.entries(initial));
+  const secrets = new Map(Object.entries(kept));
   const listeners = new Set<(key: string, value: unknown) => void>();
   const settingsContributions: SettingsContribution[] = [];
   const slots: SlotContribution[] = [];
@@ -121,6 +127,7 @@ export function fakeApi(
     inUse: 0,
     confirms: [] as ConfirmDialogOptions[],
     confirm: true,
+    keychain: true,
   };
   const ownSource = (id: string) => {
     if (registered?.id !== id) throw new Error(`“${id}” isn't a source this extension registered`);
@@ -142,6 +149,15 @@ export function fakeApi(
         listeners.add(cb);
         return () => void listeners.delete(cb);
       },
+    },
+    secrets: {
+      available: async () => state.keychain,
+      get: async (key) => (state.keychain ? (secrets.get(key) ?? null) : null),
+      set: async (key, value) => {
+        if (!state.keychain) throw new Error("This computer has no keychain to keep secrets in");
+        secrets.set(key, value);
+      },
+      delete: async (key) => void secrets.delete(key),
     },
     network: {
       requestAccess: async (url) => {
@@ -208,6 +224,7 @@ export function fakeApi(
     settingsContributions,
     slots,
     settings,
+    secrets,
     source: () => registered,
   });
 }

@@ -1,7 +1,7 @@
 {
   "id": "immich-web-folders",
   "name": "Immich Web Folders",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Open your self-hosted Immich albums like folders: rate, filter, edit and export the photos in Safelight, with originals downloaded only when you open them and your edits kept in Safelight.",
   "author": "Anthony Reimche",
   "main": "dist/index.js",
@@ -10,7 +10,7 @@
   "keywords": ["immich", "web folders", "albums", "self-hosted", "server", "remote", "library", "cloud"],
   "repository": "anthonyreimche/Immich-Web-Folders",
   "worksWith": ["anthonyreimche/Folders"],
-  "minAppVersion": "3.2.4",
+  "minAppVersion": "3.2.5",
   "permissions": {
     "userOrigins": true,
     "reason": "Connects only to the Immich server address you enter, after you allow it."
